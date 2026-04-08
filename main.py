@@ -16,6 +16,11 @@ import matplotlib.pyplot as plt
 
 class SpaghettiDataset(Dataset):
     def __init__(self, data_dir: str, transform=None):
+        """
+            ./combinedData/
+                - clean
+                - spaghetti
+        """
         super().__init__()
         self.transform = transform
         self.samples = []
@@ -58,7 +63,7 @@ class SpaghettiCNN(nn.Module):
         x = self.features(x)
         return self.classifier(x)
 
-
+# normalization constants from ImageNet
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
 
@@ -68,6 +73,7 @@ def train():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
 
+    # transforms to add randomness to the training data
     train_transform = transforms.Compose([
         transforms.Resize(232),
         transforms.RandomResizedCrop(224, scale=(0.7, 1.0)),
@@ -80,6 +86,7 @@ def train():
         transforms.RandomErasing(p=0.2),
     ])
 
+    # transforms to standardize the data for evaluation without any randomness
     eval_transform = transforms.Compose([
         transforms.Resize(232),
         transforms.CenterCrop(224),
@@ -99,16 +106,9 @@ def train():
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=2)
     test_loader  = DataLoader(test_ds,  batch_size=batch_size, shuffle=False, num_workers=2)
 
-    labels = [train_ds.dataset.samples[i][1] for i in train_ds.indices]
-    class_counts = torch.bincount(torch.tensor(labels)).float()
-    class_weights = (1.0 / class_counts)
-    class_weights = class_weights / class_weights.sum() * len(class_counts)
-    print("Total samples: ", len(full_ds))
-    print(f"Class counts: {class_counts.tolist()}, weights: {class_weights.tolist()}")
-
     model = SpaghettiCNN().to(device)
     optimizer = optim.AdamW(model.parameters(), lr=3e-4, weight_decay=1e-4)
-    criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
+    criterion = nn.CrossEntropyLoss()
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
 
     print(f"\n{'Epoch':>5}  {'Train Acc':>9}  {'Test Acc':>8}")
@@ -153,23 +153,14 @@ def train():
             break
 
         scheduler.step()
-        
 
-    # test
-    # model.eval()
-    # correct, n = 0, 0
-    # with torch.no_grad():
-    #     for image, label in val_loader:
-    #         image = image.to(device)
-    #         label = label.to(device)
-    #         correct += (model(image).argmax(1) == label).sum().item(); n += len(label)
-    # test_acc = correct / n
-    # print(f"Test Acc: {test_acc:>7.2%}")
 
+    # save model
     model_name = f"CNN_{test_acc:.2%}_test_{epoch}epochs"
     model_path = f"{model_name}.pth"
     torch.save(model.state_dict(), model_path)
 
+    # save history of accuracies
     with open(f"history_{model_name}.csv", "w") as f:
         writer = csv.writer(f)
         writer.writerow(["epoch", "train_acc", "test_acc"])
@@ -220,7 +211,7 @@ def manual_test(model_path: str):
             print(f"Correct: {correct}/{len(os.listdir(folder_path))} ({correct/len(os.listdir(folder_path)):.2%})")
             print("-" * 20)
 
-def plot_accuracy_from_csv():
+def plot_accuracy():
     df = pd.read_csv("model_history.csv")
 
     fig, ax = plt.subplots(figsize=(10, 5))
@@ -247,4 +238,4 @@ if __name__ == "__main__":
         model_path
     )
 
-    # plot_accuracy_from_csv()
+    # plot_accuracy()
